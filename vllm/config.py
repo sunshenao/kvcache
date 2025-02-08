@@ -2550,6 +2550,11 @@ class KVTransferConfig(BaseModel):
     # The KV connector port, used to build distributed connection
     kv_port: int = 14579
 
+    # 表示与当前rank建立连接的别的rank列表
+    kv_matchs: list[list] = [[0,1]]
+    # kv_producer_matchs: list = None
+    # kv_consumer_matchs: list = None
+
     def compute_hash(self) -> str:
         """
         WARNING: Whenever a new field is added to this config,
@@ -2989,6 +2994,8 @@ class VllmConfig:
     additional_config: SupportsHash = field(default=None,
                                             init=True)  # type: ignore
     instance_id: str = ""
+
+    # kv_match: list = None
 
     def compute_hash(self) -> str:
         """

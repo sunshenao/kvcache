@@ -24,8 +24,9 @@ from starlette.datastructures import State
 from starlette.routing import Mount
 from typing_extensions import assert_never
 
+from vllm.distributed.kv_transfer.kv_transfer_agent import KVTransferAgent
 import vllm.envs as envs
-from vllm.config import ModelConfig
+from vllm.config import KVTransferConfig, ModelConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine  # type: ignore
 from vllm.engine.multiprocessing.client import MQLLMEngineClient
@@ -817,10 +818,19 @@ async def run_server(args, **uvicorn_kwargs) -> None:
 if __name__ == "__main__":
     # NOTE(simon):
     # This section should be in sync with vllm/scripts.py for CLI entrypoints.
+    
+    # import os
+    # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     parser = FlexibleArgumentParser(
         description="vLLM OpenAI-Compatible RESTful API server.")
+    
     parser = make_arg_parser(parser)
     args = parser.parse_args()
+    # args.model = '/root/models/Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4'
+    # args.port = 8200
+    # args.max_model_len = 10000
+    # args.gpu_memory_utilization = 0.9
+    # args.kv_transfer_config = KVTransferConfig(kv_connector="PyNcclConnector",kv_role="kv_producer",kv_rank=0,kv_parallel_size=2,kv_buffer_size=2e9)
     validate_parsed_serve_args(args)
-
+    
     uvloop.run(run_server(args))

@@ -55,6 +55,16 @@ launch_chunked_prefill() {
     --max-model-len 10000 \
     --enable-chunked-prefill \
     --gpu-memory-utilization 0.8 &
+
+  CUDA_VISIBLE_DEVICES=2 python3 \
+    -m vllm.entrypoints.openai.api_server \
+    --model $model \
+    --port 8300 \
+    --max-model-len 10000 \
+    --enable-chunked-prefill \
+    --gpu-memory-utilization 0.8 &
+  
+  wait_for_server 8300
   wait_for_server 8200
   wait_for_server 8100
   python3 round_robin_proxy.py &
@@ -64,7 +74,7 @@ launch_chunked_prefill() {
 # export MOONCAKE_CONFIG_PATH='/root/code/kvcache/Mooncake/vllm/mooncake.json'
 # --enable-chunked-prefill \
 launch_disagg_prefill() {
-  model="/root/models/Qwen/Qwen2.5-7B-Instruct" 
+  model="/root/models/Qwen/Qwen2.5-7B-Instruct"  # -GPTQ-Int4
   # disagg prefill
   CUDA_VISIBLE_DEVICES=0 python3 \
     -m vllm.entrypoints.openai.api_server \
@@ -72,23 +82,32 @@ launch_disagg_prefill() {
     --port 8100 \
     --max-model-len 10000 \
     --gpu-memory-utilization 0.8 \
-    --enable-chunked-prefill \
     --kv-transfer-config \
-    '{"kv_connector":"PyNcclConnector","kv_role":"kv_producer","kv_rank":0,"kv_parallel_size":2,"kv_buffer_size":2e9}' &
-# PyNcclConnector1MooncakeConnector
+    '{"kv_connector":"PyNcclConnector","kv_role":"kv_producer","kv_rank":0,"kv_parallel_size":3,"kv_buffer_size":2e9,"kv_matchs":[[0,2],[1,2]]}' &
+
   CUDA_VISIBLE_DEVICES=1 python3 \
     -m vllm.entrypoints.openai.api_server \
     --model $model \
     --port 8200 \
     --max-model-len 10000 \
     --gpu-memory-utilization 0.8 \
-    --enable-chunked-prefill \
     --kv-transfer-config \
-    '{"kv_connector":"PyNcclConnector","kv_role":"kv_consumer","kv_rank":1,"kv_parallel_size":2,"kv_buffer_size":2e9}' &
+    '{"kv_connector":"PyNcclConnector","kv_role":"kv_producer","kv_rank":1,"kv_parallel_size":3,"kv_buffer_size":2e9,"kv_matchs":[[0,2],[1,2]]}' &
+
+# PyNcclConnector1MooncakeConnector
+  CUDA_VISIBLE_DEVICES=2 python3 \
+    -m vllm.entrypoints.openai.api_server \
+    --model $model \
+    --port 8300 \
+    --max-model-len 10000 \
+    --gpu-memory-utilization 0.8 \
+    --kv-transfer-config \
+    '{"kv_connector":"PyNcclConnector","kv_role":"kv_consumer","kv_rank":2,"kv_parallel_size":3,"kv_buffer_size":2e9,"kv_matchs":[[0,2],[1,2]]}' &
 
   wait_for_server 8100
   wait_for_server 8200
-  python3 disagg_prefill_proxy_server.py &
+  wait_for_server 8300
+  python3 disagg_xpyd_proxy_server.py &
   sleep 1
 }
 
@@ -157,24 +176,25 @@ main() {
 
   kill_gpu_processes
 
-# launch_disagg_prefill
-# # python ../benchmark_serving.py --model=/root/models/Qwen/Qwen2.5-7B-Instruct --num-prompts 100 --dataset-name=random --random-input-len=512 --random-output-len=512   --request-rate=2.6
-
-# kill_gpu_processes
-
-# launch_chunked_prefill
-# python ../benchmark_serving.py --model=/root/models/Qwen/Qwen2.5-7B-Instruct --num-prompts 100 --dataset-name=random --random-input-len=512 --random-output-len=512   --request-rate=1.3
-
-  launch_disagg_prefill
-  for qps in 2 4 8 6; do
-  benchmark $qps $default_output_len $default_input_len disagg_prefill
+#   launch_disagg_prefill
+#   for qps in 10 8 6 4; do
+#   benchmark $qps $default_output_len $default_input_len disagg_prefill
+#   done
+  launch_chunked_prefill
+  for qps in 10 8 6 4 2; do
+  benchmark $qps $default_output_len $default_input_len chunked_prefill
   done
+  
 
   kill_gpu_processes
 
-  launch_chunked_prefill
-  for qps in 2 4 6 8; do
-  benchmark $qps $default_output_len $default_input_len chunked_prefill
+#   launch_chunked_prefill
+#   for qps in 10 8 6 4; do
+#   benchmark $qps $default_output_len $default_input_len chunked_prefill
+#   done
+  launch_disagg_prefill
+  for qps in 10 8 6 4 2; do
+  benchmark $qps $default_output_len $default_input_len disagg_prefill
   done
 
   kill_gpu_processes

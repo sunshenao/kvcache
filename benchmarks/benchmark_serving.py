@@ -1124,6 +1124,7 @@ if __name__ == "__main__":
         "--goodput",
         nargs="+",
         required=False,
+        default={"ttft:400","tpot:40"},
         help="Specify service level objectives for goodput as \"KEY:VALUE\" "
         "pairs, where the key is a metric name, and the value is in "
         "milliseconds. Multiple \"KEY:VALUE\" pairs can be provided, "

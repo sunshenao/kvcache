@@ -85,7 +85,7 @@ def nullable_kvs(val: str) -> Optional[Mapping[str, int]]:
 @dataclass
 class EngineArgs:
     """Arguments for vLLM engine."""
-    model: str = 'facebook/opt-125m'
+    model: str =  '/root/models/Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4' #'facebook/opt-125m'
     served_model_name: Optional[Union[str, List[str]]] = None
     tokenizer: Optional[str] = None
     task: TaskOption = "auto"

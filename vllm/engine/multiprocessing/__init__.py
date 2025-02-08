@@ -32,7 +32,8 @@ class RPCProcessRequest:
     lora_request: Optional[LoRARequest] = None
     trace_headers: Optional[Mapping[str, str]] = None
     prompt_adapter_request: Optional[PromptAdapterRequest] = None
-    priority: int = 0
+    priority: int = 0,
+    kv_match: list = None
 
     @overload
     def __init__(
@@ -44,6 +45,7 @@ class RPCProcessRequest:
         trace_headers: Optional[Mapping[str, str]] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
+        kv_match: list = None,
     ) -> None:
         ...
 
@@ -59,6 +61,7 @@ class RPCProcessRequest:
         trace_headers: Optional[Mapping[str, str]] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
+        kv_match: list = None,
     ) -> None:
         ...
 
@@ -75,6 +78,7 @@ class RPCProcessRequest:
             trace_headers: Optional[Mapping[str, str]] = None,
             prompt_adapter_request: Optional[PromptAdapterRequest] = None,
             priority: int = 0,
+            kv_match: list = None,
             *,
             inputs: Optional[PromptType] = None,  # DEPRECATED
     ) -> None:
@@ -92,6 +96,7 @@ class RPCProcessRequest:
         self.trace_headers = trace_headers
         self.prompt_adapter_request = prompt_adapter_request
         self.priority = priority
+        self.kv_match = kv_match
 
 
 @dataclass

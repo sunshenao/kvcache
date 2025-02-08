@@ -272,7 +272,11 @@ async def async_request_openai_completions(
                         if chunk == "[DONE]":
                             latency = time.perf_counter() - st
                         else:
-                            data = json.loads(chunk)
+                            try:
+                                data = json.loads(chunk)
+                            except:
+                                print("--"*10)
+                                print(chunk)
 
                             # NOTE: Some completion API might have a last
                             # usage summary response without a token so we

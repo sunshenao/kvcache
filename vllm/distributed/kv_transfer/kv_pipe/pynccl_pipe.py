@@ -11,6 +11,7 @@
     - Supports distributed process groups with configurable parameters
 """
 
+import itertools
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -47,7 +48,9 @@ class PyNcclPipe(KVPipeBase):
                  local_rank: int,
                  config: KVTransferConfig,
                  device: Optional[str] = None,
-                 port_offset: int = 0):
+                 port_offset: int = 0,
+                 kv_match: list[list] = None):
+        self.kv_match = kv_match
         self.config = config
         self.local_rank = local_rank
         self.kv_rank = self.config.kv_rank
@@ -69,8 +72,18 @@ class PyNcclPipe(KVPipeBase):
         impl = self._get_device_send_recv_impl(self.group)
         self.device_send_func, self.device_recv_func = impl
         # set target rank
-        self.target_rank_for_send = (self.kv_rank + 1) % self.kv_parallel_size
-        self.target_rank_for_recv = (self.kv_rank - 1) % self.kv_parallel_size
+        # self.target_rank_for_send = itertools.cycle(self.kv_matchs[1]) # 发送的rank列表
+        # self.target_rank_for_recv = itertools.cycle(self.kv_matchs[0]) # 接收的rank列表
+        # self.target_rank_for_send = (self.kv_rank + 1) % self.kv_parallel_size
+        # self.target_rank_for_recv = (self.kv_rank - 1) % self.kv_parallel_size
+
+        if self.config.is_kv_producer:
+
+            self.target_rank_for_send = self.kv_match[1] 
+            self.target_rank_for_recv = self.kv_match[1]
+        else:
+            self.target_rank_for_send = self.kv_match[0] 
+            self.target_rank_for_recv = self.kv_match[0]
 
         # transportation-related variables
         self.transport_thread: Optional[ThreadPoolExecutor] = None
@@ -217,7 +230,7 @@ class PyNcclPipe(KVPipeBase):
         """
         while self.buffer_size > self.buffer_size_thresh:
             logger.debug("KV cache transfer pipe is full. Waiting...")
-            time.sleep(0.05)
+            time.sleep(0.001)
 
     def send_tensor(self, tensor: Optional[torch.Tensor]) -> None:
         """

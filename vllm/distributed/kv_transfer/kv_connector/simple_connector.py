@@ -69,81 +69,120 @@ class SimpleConnector(KVConnectorBase):
         self.producer_signal_pipe: Union[PyNcclPipe, MooncakePipe]
         self.consumer_signal_pipe: Union[PyNcclPipe, MooncakePipe]
 
-        # 2 pipes for every rank in the world
-        port_offset_base = 2 * rank
 
+        self.consumer_data_pipe: Union[PyNcclPipe, MooncakePipe]
+        # 2 pipes for every rank in the world
+        port_offset_base = 2 * self.config.kv_parallel_size
+        self.kv_matchs = self.config.kv_matchs
+
+
+        self.producer_data_pipes = {}
+        self.producer_signal_pipes = {}
+        self.producer_buffers = {}
+
+        self.consumer_data_pipes = {}
+        self.consumer_signal_pipes = {}
+        self.consumer_buffers = {}
         # In disaggregated prefill, the prefill vLLM only uses send pipe
         # and the decode vLLM only uses recv pipe
         if self.config.is_kv_producer:
+            for index,kv_match in enumerate(self.kv_matchs):
+                key = self.key(kv_match=kv_match)
+                if self.config.kv_connector == "PyNcclConnector":
+                    self.producer_data_pipe = PyNcclPipe(
+                        local_rank=local_rank,
+                        config=self.config,
+                        port_offset=port_offset_base+index*2,
+                        kv_match=kv_match
+                        
+                    )
 
-            if self.config.kv_connector == "PyNcclConnector":
-                self.producer_data_pipe = PyNcclPipe(
-                    local_rank=local_rank,
-                    config=self.config,
-                    port_offset=port_offset_base,
-                )
-                self.producer_signal_pipe = PyNcclPipe(
-                    local_rank=local_rank,
-                    config=self.config,
-                    port_offset=port_offset_base + 1,
-                    device="cpu",
-                )
-            elif self.config.kv_connector == "MooncakeConnector":
-                self.producer_data_pipe = MooncakePipe(
-                    local_rank=local_rank,
-                    config=self.config,
-                )
-                # We only need to initialize MooncakePipe once
-                self.producer_signal_pipe = self.producer_data_pipe
+                    self.producer_signal_pipe = PyNcclPipe(
+                        local_rank=local_rank,
+                        config=self.config,
+                        port_offset=port_offset_base+index*2+1,
+                        device="cpu",
+                        kv_match=kv_match
+                    )
+                elif self.config.kv_connector == "MooncakeConnector":
+                    self.producer_data_pipe = MooncakePipe(
+                        local_rank=local_rank,
+                        config=self.config,
+                    )
+                    # We only need to initialize MooncakePipe once
+                    self.producer_signal_pipe = self.producer_data_pipe
 
-            self.producer_buffer = SimpleBuffer(self.producer_signal_pipe,
+                self.producer_buffer = SimpleBuffer(self.producer_signal_pipe,
                                                 self.producer_data_pipe,
                                                 self.config.kv_buffer_size)
 
-        else:
+                self.producer_data_pipes[key] = self.producer_data_pipe
+                self.producer_signal_pipes[key] = self.producer_signal_pipe
+                self.producer_buffers[key] = self.producer_buffer
 
+        else:
+            
             # the current vLLM instance is KV consumer, so it needs to connect
             # its recv pipe to the send pipe of KV producder
-            if self.config.kv_connector == "PyNcclConnector":
-                self.consumer_data_pipe = PyNcclPipe(
-                    local_rank=local_rank,
-                    config=self.config,
-                    port_offset=port_offset_base,
-                )
-                self.consumer_signal_pipe = PyNcclPipe(
-                    local_rank=local_rank,
-                    config=self.config,
-                    port_offset=port_offset_base + 1,
-                    device="cpu",
-                )
-            elif self.config.kv_connector == "MooncakeConnector":
-                self.consumer_data_pipe = MooncakePipe(
-                    local_rank=local_rank,
-                    config=self.config,
-                )
-                self.consumer_signal_pipe = self.consumer_data_pipe
+            for index,kv_match in enumerate(self.kv_matchs):
+                key = self.key(kv_match=kv_match)
+                if self.config.kv_connector == "PyNcclConnector":
+                    self.consumer_data_pipe = PyNcclPipe(
+                        local_rank=local_rank,
+                        config=self.config,
+                        port_offset=port_offset_base+index*2,
+                        kv_match=kv_match
+                    )
+                    self.consumer_signal_pipe = PyNcclPipe(
+                        local_rank=local_rank,
+                        config=self.config,
+                        port_offset=port_offset_base+index*2+1,
+                        device="cpu",
+                        kv_match=kv_match
+                    )
+                elif self.config.kv_connector == "MooncakeConnector":
+                    self.consumer_data_pipe = MooncakePipe(
+                        local_rank=local_rank,
+                        config=self.config,
+                    )
+                    self.consumer_signal_pipe = self.consumer_data_pipe
 
-            self.consumer_buffer = SimpleBuffer(
-                self.consumer_signal_pipe,
-                self.consumer_data_pipe,
-                self.config.kv_buffer_size,
-            )
+                self.consumer_buffer = SimpleBuffer(
+                    self.consumer_signal_pipe,
+                    self.consumer_data_pipe,
+                    self.config.kv_buffer_size,
+                )
 
+                self.consumer_data_pipes[key] = self.consumer_data_pipe
+                self.consumer_signal_pipes[key] = self.consumer_signal_pipe
+                self.consumer_buffers[key] = self.consumer_buffer
+
+    def key(self,kv_match):
+        return str(kv_match[0]) + '_' + str(kv_match[1])
+    
     def select(self, input_tokens: Optional[torch.Tensor],
-               roi: Optional[torch.Tensor]) -> List[Optional[torch.Tensor]]:
+               roi: Optional[torch.Tensor],kv_match = None) -> List[Optional[torch.Tensor]]:
 
         assert self.consumer_buffer is not None, "Please initialize the "\
             "consumer buffer before calling select."
-        return self.consumer_buffer.drop_select(input_tokens, roi)
-
+        if not kv_match:
+            return self.consumer_buffer.drop_select(input_tokens, roi)
+        else:
+            kv_key = self.key(kv_match=kv_match)
+            # print(self.consumer_buffers,kv_match,key_kv)
+            return self.consumer_buffers[kv_key].drop_select(input_tokens, roi)
+        
     def insert(self, input_tokens: torch.Tensor, roi: torch.Tensor,
                key: torch.Tensor, value: torch.Tensor,
-               hidden: torch.Tensor) -> None:
+               hidden: torch.Tensor,kv_match = None) -> None:
 
         assert self.producer_buffer is not None, "Please initialize the "\
             "producer buffer before calling insert."
-
-        self.producer_buffer.insert(input_tokens, roi, key, value, hidden)
+        if not kv_match:
+            self.producer_buffer.insert(input_tokens, roi, key, value, hidden)
+        else:
+            key_kv = self.key(kv_match=kv_match)
+            self.producer_buffers[key_kv].insert(input_tokens, roi, key, value, hidden)
 
     def send_kv_caches_and_hidden_states(
         self,
@@ -152,6 +191,7 @@ class SimpleConnector(KVConnectorBase):
         kv_caches: List[torch.Tensor],
         hidden_or_intermediate_states: Union[torch.Tensor,
                                              IntermediateTensors],
+        kv_match=None
     ) -> None:
 
         input_tokens_tensor = model_input.input_tokens
@@ -193,14 +233,20 @@ class SimpleConnector(KVConnectorBase):
             self.insert(current_tokens,
                         torch.ones_like(current_tokens,
                                         dtype=bool), keys, values,
-                        hidden_or_intermediate_states[start_pos:end_pos])
+                        hidden_or_intermediate_states[start_pos:end_pos],
+                        kv_match=kv_match)
+            
+        # print('隐藏层大小',hidden_or_intermediate_states.numel()*hidden_or_intermediate_states.element_size()/1e6
+        #         ,'kvcache层大小',2*keys.numel()*keys.element_size()/1e6,len(input_tokens_tensor))
+        # print(kv_match)
 
         logger.debug("[rank%d]: KV send DONE.", torch.distributed.get_rank())
 
     def recv_kv_caches_and_hidden_states(
         self, model_executable: torch.nn.Module,
         model_input: "ModelInputForGPUWithSamplingMetadata",
-        kv_caches: List[torch.Tensor]
+        kv_caches: List[torch.Tensor],
+        kv_match=None
     ) -> Tuple[Union[torch.Tensor, IntermediateTensors], bool,
                "ModelInputForGPUWithSamplingMetadata"]:
 
@@ -234,7 +280,8 @@ class SimpleConnector(KVConnectorBase):
             start_pos_list.append(start_pos)
 
             ret = self.select(current_tokens,
-                              torch.ones_like(current_tokens, dtype=bool))
+                              torch.ones_like(current_tokens, dtype=bool),
+                              kv_match=kv_match)
             if ret[0] is None:
                 # didn't find any match.
                 bypass_model_exec = False
@@ -301,11 +348,18 @@ class SimpleConnector(KVConnectorBase):
         return hidden_or_intermediate_states, bypass_model_exec, model_input
 
     def close(self):
-        self.producer_data_pipe.close()
-        self.consumer_data_pipe.close()
+        for producer_data_pipe in self.producer_data_pipes:
+            producer_data_pipe.close()
+        for consumer_data_pipe in self.consumer_data_pipes:
+            consumer_data_pipe.close()
+
         if self.config.kv_connector == "PyNcclConnector":
-            self.producer_signal_pipe.close()
-            self.consumer_signal_pipe.close()
+            for producer_signal_pipe in self.producer_signal_pipes:
+                producer_signal_pipe.close()
+            
+            for consumer_signal_pipe in self.consumer_signal_pipes:
+                consumer_signal_pipe.close()
+            
         elif self.config.kv_connector == "MooncakeConnector":
             # MooncakePipe reuses data_pipe for signal_pipe, so we only have to
             # close the data_pipe.

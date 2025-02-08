@@ -54,7 +54,8 @@ class OpenAIServingCompletion(OpenAIServing):
             logger.info(
                 "Overwriting default completion sampling param with: %s",
                 diff_sampling_param)
-
+            
+    # 清求计算的地方
     async def create_completion(
         self,
         request: CompletionRequest,
@@ -86,6 +87,8 @@ class OpenAIServingCompletion(OpenAIServing):
 
         request_id = f"cmpl-{self._base_request_id(raw_request)}"
         created_time = int(time.time())
+
+        self.kv_match = getattr(request, 'kv_match', None)
 
         request_metadata = RequestResponseMetadata(request_id=request_id)
         if raw_request:
@@ -131,11 +134,11 @@ class OpenAIServingCompletion(OpenAIServing):
 
                 request_id_item = f"{request_id}-{i}"
 
-                self._log_inputs(request_id_item,
-                                 request_prompts[i],
-                                 params=sampling_params,
-                                 lora_request=lora_request,
-                                 prompt_adapter_request=prompt_adapter_request)
+                # self._log_inputs(request_id_item,
+                #                  request_prompts[i],
+                #                  params=sampling_params,
+                #                  lora_request=lora_request,
+                #                  prompt_adapter_request=prompt_adapter_request)
 
                 trace_headers = (await
                                  self._get_trace_headers(raw_request.headers))
@@ -145,6 +148,7 @@ class OpenAIServingCompletion(OpenAIServing):
                         prompt=engine_prompt,
                         request_id=request_id,
                         params=sampling_params,
+                        kv_match=self.kv_match
                     )
                 else:
                     generator = self.engine_client.generate(
@@ -155,6 +159,7 @@ class OpenAIServingCompletion(OpenAIServing):
                         prompt_adapter_request=prompt_adapter_request,
                         trace_headers=trace_headers,
                         priority=request.priority,
+                        kv_match=self.kv_match
                     )
 
                 generators.append(generator)

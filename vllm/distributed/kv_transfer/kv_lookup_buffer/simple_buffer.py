@@ -81,7 +81,8 @@ class SimpleBuffer(KVLookupBufferBase):
 
     def _send_tensor_and_dec_size(self,
                                   tensor: Optional[torch.Tensor]) -> None:
-
+        # if tensor is None:
+        #     self.data_pipe.send(None)
         assert tensor is not None, "Use self.data_pipe.send(None) instead"
         self.buffer_size -= tensor.element_size() * tensor.numel()
         if tensor.dtype == torch.bool:

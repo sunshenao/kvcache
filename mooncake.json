@@ -1,0 +1,11 @@
+{
+  "prefill_url": "localhost:13003",
+  "decode_url": "localhost:13103",
+  "metadata_server": "redis://localhost:6379",
+  "metadata_backend": "redis",
+  "protocol": "tcp",
+  "device_name": ""
+}
+
+
+

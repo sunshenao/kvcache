@@ -52,13 +52,13 @@ class OpenAIBaseModel(BaseModel):
                 field_names.add(field_name)
                 if hasattr(field, 'alias') and field.alias:
                     field_names.add(field.alias)
-
+            # print(data,cls,sep='\n')
             # Compare against both field names and aliases
             extra_fields = data.keys() - field_names
-            if extra_fields:
-                logger.warning(
-                    "The following fields were present in the request "
-                    "but ignored: %s", extra_fields)
+            # if extra_fields:
+            #     logger.warning(
+            #         "The following fields were present in the request "
+            #         "but ignored: %s", extra_fields)
         return data
 
 
@@ -110,6 +110,7 @@ class UsageInfo(OpenAIBaseModel):
     total_tokens: int = 0
     completion_tokens: Optional[int] = 0
     prompt_tokens_details: Optional[PromptTokenUsageInfo] = None
+    # kv_match: list = None
 
 
 class RequestResponseMetadata(BaseModel):
@@ -1036,6 +1037,7 @@ class CompletionResponseStreamChoice(OpenAIBaseModel):
             "to stop, None if the completion finished for some other reason "
             "including encountering the EOS token"),
     )
+    kv_match: list = None
 
 
 class CompletionStreamResponse(OpenAIBaseModel):

@@ -31,14 +31,12 @@ async def forward_request(url, data):
 async def handle_request():
     try:
         original_request_data = await request.get_json()
-        original_request_data['kv_match'] = [0,1]
+
         prefill_request = original_request_data.copy()
         # change max_tokens = 1 to let it only do prefill
         prefill_request['max_tokens'] = 1
-        # print()
 
         # finish prefill
-  
         async for _ in forward_request('http://localhost:8100/v1/completions',
                                        prefill_request):
             continue
@@ -46,8 +44,8 @@ async def handle_request():
         # return decode
         generator = forward_request('http://localhost:8200/v1/completions',
                                     original_request_data)
-        response = await make_response(generator)
 
+        response = await make_response(generator)
         response.timeout = None
 
         return response
