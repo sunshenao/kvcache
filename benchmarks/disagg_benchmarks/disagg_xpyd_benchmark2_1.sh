@@ -3,7 +3,7 @@
 # Requirement: 2x GPUs.
 
 
-# Model: /root/models/Qwen/Qwen2.5-7B-Instruct
+# Model: /root/models/Qwen/Qwen2.5-7B-Instruct -GPTQ-Int8
 # Query: 1024 input tokens, 6 output tokens, QPS 2/4/6/8, 100 requests
 # Resource: 2x GPU
 # Approaches:
@@ -23,7 +23,7 @@ kill_gpu_processes() {
   # kill all processes on GPU.
   pgrep pt_main_thread | xargs -r kill -9
   pgrep python3 | xargs -r kill -9
-  for port in 8000 8100 8200; do lsof -t -i:$port | xargs -r kill -9; done
+  for port in 8000 8100 8200 8300 8400 8500 8600 8700 8800; do lsof -t -i:$port | xargs -r kill -9; done
   sleep 1
 }
 
@@ -39,12 +39,13 @@ wait_for_server() {
 
 export VLLM_USE_V1=0
 launch_chunked_prefill() {
-  model="/root/models/Qwen/Qwen2.5-7B-Instruct"
+  model="/root/models/Qwen/Qwen2.5-7B-Instruct "  #  
   # disagg prefill
   CUDA_VISIBLE_DEVICES=0 python3 \
     -m vllm.entrypoints.openai.api_server \
     --model $model \
     --port 8100 \
+    --max_num_seqs 256 \
     --max-model-len 10000 \
     --gpu-memory-utilization 0.85 &
 
@@ -52,18 +53,32 @@ launch_chunked_prefill() {
     -m vllm.entrypoints.openai.api_server \
     --model $model \
     --port 8200 \
+    --max_num_seqs 256 \
+    --max-model-len 10000 \
+    --gpu-memory-utilization 0.85  &
+  
+  CUDA_VISIBLE_DEVICES=2 python3 \
+    -m vllm.entrypoints.openai.api_server \
+    --model $model \
+    --port 8300 \
+    --max_num_seqs 256 \
     --max-model-len 10000 \
     --gpu-memory-utilization 0.85 &
+  
 
-  wait_for_server 8100
+  
+  wait_for_server 8300
   wait_for_server 8200
-  python3 round_robin_proxy.py &
+  wait_for_server 8100
+
+  python3 round_robin_proxy_xpyd.py &
   sleep 1
 }
-# --max_num_seqs 256 \
 
+# export MOONCAKE_CONFIG_PATH='/root/code/kvcache/Mooncake/vllm/mooncake.json'
+# --enable-chunked-prefill \
 launch_disagg_prefill() {
-  model="/root/models/Qwen/Qwen2.5-7B-Instruct" 
+  model="/root/models/Qwen/Qwen2.5-7B-Instruct "  #  
   # disagg prefill
   CUDA_VISIBLE_DEVICES=0 python3 \
     -m vllm.entrypoints.openai.api_server \
@@ -72,7 +87,7 @@ launch_disagg_prefill() {
     --max-model-len 10000 \
     --gpu-memory-utilization 0.85 \
     --kv-transfer-config \
-    '{"kv_connector":"NcclStoreConnector","kv_role":"kv_producer","kv_rank":0,"kv_parallel_size":2,"kv_buffer_size":2e9}' &
+    '{"kv_connector":"NcclConnector","kv_role":"kv_producer","kv_port":"9001","kv_connector_extra_config":{"proxy_ip":"0.0.0.0","proxy_port":"30001","http_port":"8100"}}' &
 
   CUDA_VISIBLE_DEVICES=1 python3 \
     -m vllm.entrypoints.openai.api_server \
@@ -81,20 +96,32 @@ launch_disagg_prefill() {
     --max-model-len 10000 \
     --gpu-memory-utilization 0.85 \
     --kv-transfer-config \
-    '{"kv_connector":"NcclStoreConnector","kv_role":"kv_consumer","kv_rank":1,"kv_parallel_size":2,"kv_buffer_size":2e9}' &
-    
+  '{"kv_connector":"NcclConnector","kv_role":"kv_consumer","kv_port":"9002","kv_connector_extra_config":{"proxy_ip":"0.0.0.0","proxy_port":"30001","http_port":"8200"}}' &  
+  
+  CUDA_VISIBLE_DEVICES=2 python3 \
+    -m vllm.entrypoints.openai.api_server \
+    --model $model \
+    --port 8300 \
+    --max-model-len 10000 \
+    --gpu-memory-utilization 0.85 \
+    --kv-transfer-config \
+    '{"kv_connector":"NcclConnector","kv_role":"kv_consumer","kv_port":"9003","kv_connector_extra_config":{"proxy_ip":"0.0.0.0","proxy_port":"30001","http_port":"8300"}}' &
+  
+# PyNcclConnector1MooncakeConnector
 
   wait_for_server 8100
   wait_for_server 8200
-  python3 xpyd.py & # NcclStoreConnector PyNcclConnector
+  wait_for_server 8300
+
+  python3 disagg_prefill_proxy_xpyd.py &
   sleep 1
 }
 
 
 benchmark() {
-  results_folder="./results"
-  model="/root/models/Qwen/Qwen2.5-7B-Instruct"
-  dataset_name="sonnet"
+  results_folder="./results2_1"
+  model="/root/models/Qwen/Qwen2.5-7B-Instruct "
+  dataset_name="sonnet" # sonnet random
   dataset_path="../sonnet_4x.txt"
   num_prompts=100
   qps=$1
@@ -118,7 +145,8 @@ benchmark() {
           --result-filename "$tag"-qps-"$qps".json \
           --request-rate "$qps" \
           --random-range-ratio 0.2 \
-          --random-input-len 512 
+          --random-input-len 512 \
+
   sleep 2
 }
 
@@ -143,28 +171,29 @@ main() {
   done
   cd disagg_benchmarks
 
-  rm -rf results
-  mkdir results
+  # rm -rf results2_1
+  # mkdir results2_1
 
-  default_output_len=20
+  default_output_len=6
 
-  default_input_len=500
+  default_input_len=1024
 
   export VLLM_HOST_IP=$(hostname -I | awk '{print $1}')
 
   kill_gpu_processes
 
   launch_disagg_prefill
-  for qps in  4 6 2; do
-  benchmark $qps $default_output_len $default_input_len disagg_prefill
+  for qps in 10 8 6 4; do
+  benchmark $qps $default_output_len $default_input_len 2:1disagg_prefill
   done
+  
 
-  kill_gpu_processes
+  # kill_gpu_processes
 
-  launch_chunked_prefill
-  for qps in 4 6 2; do
-  benchmark $qps $default_output_len $default_input_len chunked_prefill
-  done
+  # launch_chunked_prefill
+  # for qps in 4 6 8 10; do
+  # benchmark $qps $default_output_len $default_input_len chunked_prefill
+  # done
 
   kill_gpu_processes
 

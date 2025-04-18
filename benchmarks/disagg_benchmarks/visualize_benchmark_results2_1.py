@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 if __name__ == "__main__":
-    t = "results"
+    t = "results2_1"
     data = []
     for name in ['disagg_prefill', 'chunked_prefill']:
         for qps in range(0,100): # 2,4,

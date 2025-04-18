@@ -2,6 +2,7 @@
 
 import dataclasses
 import os
+import threading
 import time
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
@@ -268,6 +269,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     is_driver_worker: bool
     model_runner: ModelRunnerBase
     observability_config: Optional[ObservabilityConfig] = None
+    prepare_input_lock: threading.Lock = threading.Lock()
 
     @property
     @abstractmethod
@@ -335,13 +337,14 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         """ Get the driver input and broadcast it to other workers.  """
         assert self.is_driver_worker
 
-        worker_input: WorkerInput = self.prepare_worker_input(
-            execute_model_req=execute_model_req)
-        model_input: ModelRunnerInputBase = (
-            self.model_runner.prepare_model_input(
-                execute_model_req.seq_group_metadata_list,
-                execute_model_req.virtual_engine,
-                execute_model_req.finished_requests_ids))
+        with self.prepare_input_lock:
+            worker_input: WorkerInput = self.prepare_worker_input(
+                execute_model_req=execute_model_req)
+            model_input: ModelRunnerInputBase = (
+                self.model_runner.prepare_model_input(
+                    execute_model_req.seq_group_metadata_list,
+                    execute_model_req.virtual_engine,
+                    execute_model_req.finished_requests_ids))
 
         kwargs = extract_previous_hidden_states(execute_model_req)
 
@@ -642,3 +645,4 @@ def extract_previous_hidden_states(
             .hidden_states
 
     return output
+    

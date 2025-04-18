@@ -1632,6 +1632,12 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         ModelInputForGPUWithSamplingMetadata)
     _builder_cls: Type[ModelInputForGPUBuilder] = ModelInputForGPUBuilder
 
+    num: int = 0
+    send_num = 0
+    sum_time = 0
+    send_num: int = 0
+
+
     def make_model_input_from_broadcasted_tensor_dict(
         self,
         tensor_dict: Dict[str, Any],
@@ -1750,6 +1756,16 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                     model_input,
                     kv_caches=kv_caches
                 )
+            
+            self.sum_time += (time.time() -a)*1000
+            self.num += model_input.attn_metadata.num_prefills
+            self.send_num += model_input.attn_metadata.num_prefill_tokens
+            print('传输时间为: ',self.sum_time/self.num,self.num,bypass_model_exec,threading.current_thread().ident)
+            if threading.current_thread() is threading.main_thread():
+                print("运行在主线程")
+            else:
+                print("运行在子线程")
+            print(bypass_model_exec)
 
         multi_modal_kwargs = model_input.multi_modal_kwargs or {}
         seqlen_agnostic_kwargs = {

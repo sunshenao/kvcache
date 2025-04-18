@@ -691,8 +691,9 @@ class SequenceGroup:
         self.encoder_seq = encoder_seq
         self.trace_headers = trace_headers
         self.priority = priority
-
         self.cached_request_output = None
+
+        self.is_decode = False
 
     @property
     def prompt(self) -> Optional[str]:
@@ -1497,3 +1498,4 @@ class ParallelSampleSequenceGroup(SequenceGroupBase):
             if self.output_produced:
                 return None
         return None
+        

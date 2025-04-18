@@ -34,7 +34,11 @@ from vllm.config import VllmConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine  # type: ignore
 from vllm.engine.multiprocessing.client import MQLLMEngineClient
+
 from vllm.engine.multiprocessing.engine import run_mp_engine
+# from vllm.engine.multiprocessing.engine import run_mp_engine as dis_run_mp_engine
+from vllm.distributed.disagg_engine.engine import run_mp_engine as dis_run_mp_engine
+
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.chat_utils import (load_chat_template,
                                          resolve_hf_chat_template,
@@ -236,7 +240,7 @@ async def build_async_engine_client_from_engine_args(
         # we use a shared variable to communicate the information.
         engine_alive = multiprocessing.Value('b', True, lock=False)
         engine_process = context.Process(
-            target=run_mp_engine,
+            target=run_mp_engine if vllm_config.kv_transfer_config is None else dis_run_mp_engine,
             args=(vllm_config, UsageContext.OPENAI_API_SERVER, ipc_path,
                   engine_args.disable_log_stats,
                   engine_args.disable_log_requests, engine_alive))
