@@ -102,11 +102,10 @@ def get_pp_indices(num_hidden_layers: int, pp_rank: int,
         if remaining_layers := num_hidden_layers % pp_size:
             for i in range(2, remaining_layers + 2):
                 partitions[-i] += 1
-            logger.info(
-                "Hidden layers were unevenly partitioned: [%s]. "
-                "This can be manually overridden using the "
-                "VLLM_PP_LAYER_PARTITION environment variable",
-                ",".join(str(p) for p in partitions))
+            logger.info("Hidden layers were unevenly partitioned: %s",
+                        ",".join(str(p) for p in partitions))
+            logger.info("This can be manually overridden using the "
+                        "VLLM_PP_LAYER_PARTITION environment variable")
 
     start_layer = sum(partitions[:pp_rank])
     end_layer = start_layer + partitions[pp_rank]
@@ -145,12 +144,36 @@ class StatelessProcessGroup:
             i: 0
             for i in range(self.world_size)
         }
+    def clear(self):
+        self.send_dst_counter = {i: 0 for i in range(self.world_size)}
+        self.recv_src_counter = {i: 0 for i in range(self.world_size)}
+        self.broadcast_recv_src_counter = {
+            i: 0
+            for i in range(self.world_size)
+        }
+
+    def get_with_wait(self,redis_client, key, timeout=60, interval=0.005):
+        start_time = time.time()
+        
+        while True:
+            value = redis_client.get(key)
+            if value is not None:
+                return value  
+            elapsed_time = time.time() - start_time
+            if elapsed_time > timeout:
+                print(f"等待超时（{timeout}秒），键 '{key}' 不存在")
+                return None
+            time.sleep(interval)
+
 
     def send_obj(self, obj: Any, dst: int):
         """Send an object to a destination rank."""
-        self.expire_data()
-        key = f"send_to/{dst}/{self.send_dst_counter[dst]}"
+        # self.expire_data()
+        key = f"send_to/{dst}/{self.rank}_{self.send_dst_counter[dst]}"
+        # print(key)
         self.store.set(key, pickle.dumps(obj))
+        # get_with_wait(self.store,)
+                  
         self.send_dst_counter[dst] += 1
         self.entries.append((key, time.time()))
 
@@ -164,13 +187,18 @@ class StatelessProcessGroup:
                 self.entries.popleft()
             else:
                 break
-
-    def recv_obj(self, src: int) -> Any:
+                
+    def recv_obj(self, src: int,delete_key: bool = False) -> Any:
         """Receive an object from a source rank."""
-        obj = pickle.loads(
-            self.store.get(
-                f"send_to/{self.rank}/{self.recv_src_counter[src]}"))
+        key = f"send_to/{self.rank}/{src}_{self.recv_src_counter[src]}"
+        # obj = pickle.loads(
+        #     self.get_with_wait(self.store,key))
+        
+        obj = pickle.loads(self.store.get(key))
         self.recv_src_counter[src] += 1
+        if delete_key:
+            self.store.delete_key(key)
+        # self.store.delete_key(key)
         return obj
 
     def broadcast_obj(self, obj: Optional[Any], src: int) -> Any:
@@ -189,7 +217,9 @@ class StatelessProcessGroup:
         else:
             key = (f"broadcast_from/{src}/"
                    f"{self.broadcast_recv_src_counter[src]}")
+            # recv_obj = pickle.loads(self.get_with_wait(self.store,key))
             recv_obj = pickle.loads(self.store.get(key))
+
             self.broadcast_recv_src_counter[src] += 1
             return recv_obj
 
@@ -209,6 +239,21 @@ class StatelessProcessGroup:
         """A barrier to synchronize all ranks."""
         for i in range(self.world_size):
             self.broadcast_obj(None, src=i)
+
+    @staticmethod
+    def create_store(
+        rank: int,
+        world_size: int,
+        store=None,
+        data_expiration_seconds: int = 3600,
+    ) -> "StatelessProcessGroup":
+    
+
+        return StatelessProcessGroup(
+            rank=rank,
+            world_size=world_size,
+            store=store,
+            data_expiration_seconds=data_expiration_seconds)
 
     @staticmethod
     def create(

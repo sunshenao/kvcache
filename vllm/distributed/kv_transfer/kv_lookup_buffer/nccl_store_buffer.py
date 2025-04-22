@@ -234,7 +234,7 @@ class NcclStoreBuffer(KVLookupBufferBase):
                hidden: torch.Tensor,target_rank:int) -> None:
         
         self._add_to_buffer(key_world, key, value, hidden)
-
+   
         if self.request_handling_thread[target_rank] is None:
             self.request_handling_thread[target_rank] = threading.Thread(
                 target=self.drop_select_handler,args=(target_rank,))

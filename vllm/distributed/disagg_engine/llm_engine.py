@@ -1397,9 +1397,10 @@ class LLMEngine:
                 seq_group_metadata_list
         ) and not self._skip_scheduling_next_step:
             # Schedule iteration
+            
             (seq_group_metadata_list, scheduler_outputs,
-             allow_async_output_proc
-             ) = self.scheduler[virtual_engine].schedule(is_prefill=is_prefill)
+            allow_async_output_proc
+            ) = self.scheduler[virtual_engine].schedule(is_prefill=is_prefill)
 
             if seq_group_metadata_list is None:
                 return []

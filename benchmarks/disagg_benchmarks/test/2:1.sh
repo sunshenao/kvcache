@@ -43,7 +43,6 @@ launch_chunked_prefill() {
   # disagg prefill
   CUDA_VISIBLE_DEVICES=0 python3 \
     -m vllm.entrypoints.openai.api_server \
-    -tp 2\
     --model $model \
     --port 8100 \
     --max-model-len 10000 \
@@ -52,17 +51,23 @@ launch_chunked_prefill() {
 
   CUDA_VISIBLE_DEVICES=1 python3 \
     -m vllm.entrypoints.openai.api_server \
-    -tp 2\
     --model $model \
     --port 8200 \
     --max-model-len 10000 \
     --enable-chunked-prefill \
     --gpu-memory-utilization 0.85 &
 
+  CUDA_VISIBLE_DEVICES=2 python3 \
+    -m vllm.entrypoints.openai.api_server \
+    --model $model \
+    --port 8300 \
+    --max-model-len 10000 \
+    --enable-chunked-prefill \
+    --gpu-memory-utilization 0.85 &
 
   wait_for_server 8100
   wait_for_server 8200
-
+  wait_for_server 8300
   python3 round_robin_proxy.py &
   sleep 1
 }
@@ -71,41 +76,93 @@ launch_chunked_prefill() {
 launch_disagg_prefill() {
   model="/root/models/Qwen/Qwen2.5-7B-Instruct" 
   # disagg prefill
-  CUDA_VISIBLE_DEVICES=0,1 python3 \
+  CUDA_VISIBLE_DEVICES=0 python3 \
     -m vllm.entrypoints.openai.api_server \
-    -tp 2 \
     --model $model \
     --port 8100 \
     --max-model-len 10000 \
     --gpu-memory-utilization 0.85 \
     --kv-transfer-config \
-    '{"kv_connector":"NcclStoreConnector","kv_role":"kv_producer","kv_rank":0,"kv_parallel_size":2,"kv_buffer_size":4e9}' &
+    '{"kv_connector":"NcclStoreConnector","kv_role":"kv_producer","kv_rank":0,"kv_parallel_size":3,"kv_buffer_size":4e9}' &
 
-  CUDA_VISIBLE_DEVICES=2,3 python3 \
+  CUDA_VISIBLE_DEVICES=1 python3 \
     -m vllm.entrypoints.openai.api_server \
-    -tp 2 \
     --model $model \
     --port 8200 \
     --max-model-len 10000 \
     --gpu-memory-utilization 0.85 \
     --kv-transfer-config \
-    '{"kv_connector":"NcclStoreConnector","kv_role":"kv_consumer","kv_rank":1,"kv_parallel_size":2,"kv_buffer_size":4e9}' &
+    '{"kv_connector":"NcclStoreConnector","kv_role":"kv_producer","kv_rank":1,"kv_parallel_size":3,"kv_buffer_size":4e9}' &
 
+    CUDA_VISIBLE_DEVICES=2 python3 \
+    -m vllm.entrypoints.openai.api_server \
+    --model $model \
+    --port 8300 \
+    --max-model-len 10000 \
+    --gpu-memory-utilization 0.85 \
+    --kv-transfer-config \
+    '{"kv_connector":"NcclStoreConnector","kv_role":"kv_consumer","kv_rank":2,"kv_parallel_size":3,"kv_buffer_size":4e9}' &
+
+    # CUDA_VISIBLE_DEVICES=3 python3 \
+    # -m vllm.entrypoints.openai.api_server \
+    # --model $model \
+    # --port 8200 \
+    # --max-model-len 10000 \
+    # --gpu-memory-utilization 0.85 \
+    # --kv-transfer-config \
+    # '{"kv_connector":"NcclStoreConnector","kv_role":"kv_consumer","kv_rank":3,"kv_parallel_size":2,"kv_buffer_size":4e9}' &
+
+    # CUDA_VISIBLE_DEVICES=4 python3 \
+    # -m vllm.entrypoints.openai.api_server \
+    # --model $model \
+    # --port 8200 \
+    # --max-model-len 10000 \
+    # --gpu-memory-utilization 0.85 \
+    # --kv-transfer-config \
+    # '{"kv_connector":"NcclStoreConnector","kv_role":"kv_consumer","kv_rank":1,"kv_parallel_size":2,"kv_buffer_size":4e9}' &
+
+    # CUDA_VISIBLE_DEVICES=5 python3 \
+    # -m vllm.entrypoints.openai.api_server \
+    # --model $model \
+    # --port 8200 \
+    # --max-model-len 10000 \
+    # --gpu-memory-utilization 0.85 \
+    # --kv-transfer-config \
+    # '{"kv_connector":"NcclStoreConnector","kv_role":"kv_consumer","kv_rank":1,"kv_parallel_size":2,"kv_buffer_size":4e9}' &
+
+    # CUDA_VISIBLE_DEVICES=6 python3 \
+    # -m vllm.entrypoints.openai.api_server \
+    # --model $model \
+    # --port 8200 \
+    # --max-model-len 10000 \
+    # --gpu-memory-utilization 0.85 \
+    # --kv-transfer-config \
+    # '{"kv_connector":"NcclStoreConnector","kv_role":"kv_consumer","kv_rank":1,"kv_parallel_size":2,"kv_buffer_size":4e9}' &
+
+    # CUDA_VISIBLE_DEVICES=7 python3 \
+    # -m vllm.entrypoints.openai.api_server \
+    # --model $model \
+    # --port 8200 \
+    # --max-model-len 10000 \
+    # --gpu-memory-utilization 0.85 \
+    # --kv-transfer-config \
+    # '{"kv_connector":"NcclStoreConnector","kv_role":"kv_consumer","kv_rank":1,"kv_parallel_size":2,"kv_buffer_size":4e9}' &
+    
 
   wait_for_server 8100
   wait_for_server 8200
-
+  wait_for_server 8300
   python3 xpyd.py & # NcclStoreConnector PyNcclConnector
   sleep 1
 }
 
 
 benchmark() {
-  results_folder="./results3_1"
+  results_folder="./results"
   model="/root/models/Qwen/Qwen2.5-7B-Instruct"
   dataset_name="sonnet"
   dataset_path="../sonnet_4x.txt"
-  num_prompts=50
+  num_prompts=300
   qps=$1
   prefix_len=50
   input_len=$3
@@ -152,8 +209,8 @@ main() {
   done
   cd disagg_benchmarks
 
-  # rm -rf results3_1
-  # mkdir results3_1
+  rm -rf results
+  mkdir results
 
   default_output_len=20
 
@@ -164,16 +221,16 @@ main() {
   kill_gpu_processes   # 
 
   launch_disagg_prefill #1:1 12 10 8 6       2:1 20 18 16 14   3:1 26 24 22 20 , 4:1 38 34 30 26  5:1  50 56 42 38    
-  for qps in 26 ; do
+  for qps in 20 18 16 14; do
   benchmark $qps $default_output_len $default_input_len disagg_prefill
   done
 
-  # kill_gpu_processes
+  kill_gpu_processes
 
-  # launch_chunked_prefill
-  # for qps in 26 24 22 20 ; do
-  # benchmark $qps $default_output_len $default_input_len chunked_prefill
-  # done
+  launch_chunked_prefill
+  for qps in 20 18 16 14; do
+  benchmark $qps $default_output_len $default_input_len chunked_prefill
+  done
 
   kill_gpu_processes
 

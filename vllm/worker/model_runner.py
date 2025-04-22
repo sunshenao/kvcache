@@ -4,6 +4,7 @@ import dataclasses
 import gc
 import inspect
 import itertools
+import threading
 import time
 import weakref
 from contextlib import contextmanager
@@ -1746,6 +1747,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         # we can skip prefilling on tokens that successfully received KV caches
         # NOTE: The receive operation is blocking
         bypass_model_exec = False
+        a = time.time()
         if self.need_recv_kv(model_input, kv_caches):
             hidden_or_intermediate_states, bypass_model_exec, model_input = \
                 get_kv_transfer_group().recv_kv_caches_and_hidden_states(

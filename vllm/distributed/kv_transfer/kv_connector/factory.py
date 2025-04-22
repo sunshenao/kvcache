@@ -101,11 +101,6 @@ KVConnectorFactory.register_connector(
     "vllm.distributed.kv_transfer.kv_connector.v1.shared_storage_connector",
     "SharedStorageConnector")
 
-KVConnectorFactory.register_connector(
-    "SharedStorageConnector",
-    "vllm.distributed.kv_transfer.kv_connector.v1.shared_storage_connector",
-    "SharedStorageConnector")
-
 
 KVConnectorFactory.register_connector(
     "NcclStoreConnector", "vllm.distributed.kv_transfer.kv_connector.nccl_store_connector",

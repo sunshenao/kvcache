@@ -81,7 +81,6 @@ class NcclStoreConnector(KVConnectorBase):
         #     if not self.config.kv_rank in kv_match:
         #         continue
             
-
         for index,kv_match in enumerate(self.kv):
             
             if not self.config.kv_rank in kv_match:
@@ -90,7 +89,7 @@ class NcclStoreConnector(KVConnectorBase):
             
             store = TCPStore(
                 host_name=self.config.kv_ip,
-                port=self.config.kv_port + port_offset_base+(index+1+local_rank)*123,# 匹配的两个应该相同
+                port=self.config.kv_port + port_offset_base+(index+1+local_rank)*356,# 匹配的两个应该相同
                 world_size=2,
                 is_master=(self.config.kv_rank == kv_match[0]),
                 timeout=datetime.timedelta(seconds=store_timeout),
@@ -102,11 +101,12 @@ class NcclStoreConnector(KVConnectorBase):
                 config=self.config,
                 store=store,
                 kv_match=kv_match,
+                tp_size=self.tp_size
             )
 
             store1 = TCPStore(
                 host_name=self.config.kv_ip,
-                port=self.config.kv_port + port_offset_base+(index+1+local_rank)*123+1,# 匹配的两个应该相同
+                port=self.config.kv_port + port_offset_base+(index+1+local_rank)*356+1,# 匹配的两个应该相同
                 world_size=2,
                 is_master=(self.config.kv_rank == kv_match[0]),
                 timeout=datetime.timedelta(seconds=store_timeout),
@@ -119,10 +119,12 @@ class NcclStoreConnector(KVConnectorBase):
                 store=store1,
                 device="cpu",
                 kv_match=kv_match,
+                tp_size=self.tp_size
             )
             
             self.data_pipes[target_rank] = self.data_pipe
             self.signal_pipes[target_rank] = self.signal_pipe
+            # print(self.data_pipes.keys(),self.config.kv_rank,'--------------------------')
 
         self.buffer = NcclStoreBuffer(self.signal_pipes,
                                         self.data_pipes,
@@ -181,7 +183,6 @@ class NcclStoreConnector(KVConnectorBase):
 
 
         request_ids = list(model_input.request_ids_to_seq_ids.keys())
-
 
         if self.is_deepseek_mla and self.use_mla_opt:
             head_size = model_config.kv_lora_rank + \
@@ -265,7 +266,7 @@ class NcclStoreConnector(KVConnectorBase):
         input_tokens_list = []
         num_computed_tokens_list = []
         start_pos_list = []
-
+        print(self.local_rank,'+++++++++++++++++')
         request_ids = list(model_input.request_ids_to_seq_ids.keys())
         # enumerate different requests
         # FIXME(Kuntai): This impl assumes that all requests are prefill.
@@ -290,6 +291,7 @@ class NcclStoreConnector(KVConnectorBase):
             # collecting data for rebuilding the input
             input_tokens_list.append(current_tokens)
             start_pos_list.append(start_pos)
+            # print(self.local_rank,'---'*20)
 
             target_rank = self.parse_request_id(request_id=request_ids[idx],is_prefill=False)
 

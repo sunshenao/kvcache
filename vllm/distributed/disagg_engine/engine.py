@@ -120,6 +120,7 @@ class MQLLMEngine:
                             else "decode"
         self.count = 0
 
+
     def switch(self,instance):
         if self.count > 0:
             return 
@@ -180,8 +181,8 @@ class MQLLMEngine:
                 if self.prefill_thread is None:
                     self.prefill_thread = threading.Thread(target=self.prefill,args=(True,))
                     self.prefill_thread.start()
-
-            
+            # if self.kv_config and self.kv_config.is_kv_consumer:
+            #     self.engine_step(is_prefill=True)
             request_outputs = self.engine_step()
             if not self.use_async_sockets:
                 self._send_outputs(request_outputs)

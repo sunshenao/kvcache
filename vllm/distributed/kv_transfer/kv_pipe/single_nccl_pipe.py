@@ -20,7 +20,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional, Tuple
 
-import comm
 import torch
 
 from vllm.config import KVTransferConfig
@@ -59,7 +58,8 @@ class SingleNcclPipe(KVPipeBase):
                  device: Optional[str] = None,
                  kv_match=None,
                  library_path: Optional[str] = None,
-                 store = None):
+                 store = None,
+                 tp_size=1):
         self.kv_match = kv_match
         self.config = config
         self.local_rank = local_rank
@@ -67,6 +67,7 @@ class SingleNcclPipe(KVPipeBase):
         self.kv_parallel_size = self.config.kv_parallel_size
 
         self.nccl = NCCLLibrary(library_path)
+        self.tp_size = tp_size
 
         if device is None:
             self.device = self._select_device(self.config.kv_buffer_device)
@@ -76,6 +77,8 @@ class SingleNcclPipe(KVPipeBase):
         # build distributed connection and send/recv implementation
         
         self.store = store
+        # 计算实际的rank数目
+        self.rank = self.tp_size*self.kv_rank+self.local_rank
 
         # self.rank = 1 if self.config.is_kv_consumer else 0
         self.group = StatelessProcessGroup.create_store(
@@ -164,7 +167,7 @@ class SingleNcclPipe(KVPipeBase):
             f"this nccl communicator is created to work on {self.device}, "
             f"but the input tensor is on {tensor.device}")
         if stream is None:
-            stream =  self.cuda_stream
+            stream = self.cuda_stream
 
         dst = 1 if self.config.is_kv_producer else 0
 
